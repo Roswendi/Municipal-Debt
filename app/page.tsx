@@ -67,9 +67,11 @@ export default function Page() {
 
   return (
     <div className="container space-y-6 py-6">
-      <motion.h1 initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="text-2xl font-semibold tracking-tight">
-        Municipal Debt Capacity & Repayment Planner (Indonesia)
-      </motion.h1>
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Municipal Debt Capacity & Repayment Planner (Indonesia)
+        </h1>
+      </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card">
