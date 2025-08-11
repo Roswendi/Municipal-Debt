@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 255 255 255;
+  --fg: 17 24 39;
+  --muted: 107 114 128;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  color: rgb(var(--fg));
+  background: rgb(var(--bg));
+}
+
+.container {
+  @apply mx-auto max-w-7xl px-4 md:px-6 lg:px-8;
+}
+
+.card {
+  @apply rounded-2xl border shadow-sm bg-white;
+}
+
+.card-header {
+  @apply px-5 pt-5 pb-2;
+}
+
+.card-title {
+  @apply text-lg font-semibold;
+}
+
+.card-content {
+  @apply px-5 pb-5;
+}
+
+.table-head {
+  @apply bg-gray-50 text-xs text-gray-600;
+}
+
+.kpi {
+  @apply rounded-2xl border p-4 flex flex-col gap-1;
+}
+
+.badge {
+  @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs;
+}
+
+.btn {
+  @apply inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50;
+}
+
+.input {
+  @apply w-full rounded-lg border px-3 py-2 text-sm;
+}
+
+.label {
+  @apply block text-sm text-gray-600;
+}
+
+.grid-2 {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-4;
+}
+
+.grid-3 {
+  @apply grid grid-cols-1 md:grid-cols-3 gap-6;
+}
