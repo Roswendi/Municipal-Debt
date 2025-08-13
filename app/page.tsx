@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { NumberField, PercentField } from '@/components/NumberField';
 import { KPI } from '@/components/KPI';
-import { Inputs, Row, computeCapacity, buildSchedule, minDSCR, fmtIDR } from '@/lib/finance';
+import { Inputs, Row, computeCapacity, buildSchedule, minDSCR, fmtIDR, getTotalRevenue, getNettFinancing, getTotalOpex } from '@/lib/finance';
 
 function downloadCSV(filename: string, rows: Row[]) {
   const headers = [
@@ -24,18 +24,34 @@ function downloadCSV(filename: string, rows: Row[]) {
 }
 
 export default function Page() {
+  // Default values matching Excel (Endi Roswendi's calculator)
   const [inputs, setInputs] = useState<Inputs>({
-    prevRevenue: 1_000_000_000_000,
-    prevOpex: 800_000_000_000,
+    // Revenue breakdown (matching Excel: 34.722.800.000.000 total)
+    localRevenuePAD: 34_722_800_000_000,
+    balancingFundPerimbangan: 0,
+    otherLegalRevenue: 0,
+    
+    // Nett Financing (matching Excel: 1.540.603.000.000)
+    financingReceipts: 1_540_603_000_000,
+    financingExpenditures: 0,
+    
+    // Operating expenses breakdown (calculated from NOI)
+    personnelExpenses: 33_459_397_000_000, // Derived from Excel NOI calculation
+    goodsServicesExpenses: 0,
+    capitalExpenditures: 0,
+    
+    // Growth projections
     revGrowth: 0.05,
     opexGrowth: 0.03,
+    
+    // Loan parameters
     rate: 0.08,
     termYears: 10,
-    paymentType: 'annuity',
+    paymentType: 'equal_principal', // Excel shows "Equal Principal"
     reserveRatio: 1.0,
     minDSCR: 2.5,
     initReserve: 0,
-    graceYears: 2,
+    graceYears: 0, // Excel doesn't show grace period
   });
 
   const [rateShockBps, setRateShockBps] = useState(0);
@@ -53,8 +69,8 @@ export default function Page() {
     const i: Inputs = {
       ...inputs,
       rate: Math.max(0, inputs.rate + rateShockBps / 10_000),
-      prevRevenue: inputs.prevRevenue * (1 + revShockPct / 100),
-      prevOpex: inputs.prevOpex * (1 + opexShockPct / 100),
+      localRevenuePAD: inputs.localRevenuePAD * (1 + revShockPct / 100),
+      personnelExpenses: inputs.personnelExpenses * (1 + opexShockPct / 100),
     };
     const cap = computeCapacity(i);
     const sched = buildSchedule(i, cap.allowedDebt);
@@ -63,30 +79,167 @@ export default function Page() {
   }, [inputs, rateShockBps, revShockPct, opexShockPct]);
 
   const dscrOk = base.minD >= inputs.minDSCR && base.minD > 0;
-  const seventyFiveOk = base.cap.allowedDebt <= 0.75 * inputs.prevRevenue + 1e-6;
+  const seventyFiveOk = base.cap.allowedDebt <= 0.75 * getTotalRevenue(inputs) + 1e-6;
 
   return (
     <div className="container space-y-6 py-6">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Municipal Debt Capacity & Repayment Planner (Indonesia)
-        </h1>
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Municipal Debt Capacity & Repayment Planner (Indonesia)
+          </h1>
+          <div className="text-sm text-gray-600">
+            Created by: <span className="font-medium">Endi Roswendi</span> • {new Date().toLocaleDateString('id-ID')}
+          </div>
+        </div>
       </motion.div>
       
+      {/* Executive Summary */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">Executive Summary</div>
+        </div>
+        <div className="card-content">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="space-y-4">
+              <h3 className="font-medium text-gray-900">Key Capacity Outputs</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Allowed Debt (IDR)</span>
+                  <span className="font-mono text-sm">{fmtIDR(base.cap.allowedDebt)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">First-Year Debt Service</span>
+                  <span className="font-mono text-sm">{base.sched.length > 0 ? fmtIDR(base.sched[0].debtService) : fmtIDR(0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">First-Year DSCR</span>
+                  <span className="font-mono text-sm">{base.sched.length > 0 && base.sched[0].dscr ? `${base.sched[0].dscr.toFixed(2)}x` : '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Reserve Allocation (Y1)</span>
+                  <span className="font-mono text-sm">{base.sched.length > 0 ? fmtIDR(base.sched[0].reserveAlloc) : fmtIDR(0)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <h3 className="font-medium text-gray-900">Compliance Checks</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Debt ≤ 75% of previous revenue?</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${seventyFiveOk ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {seventyFiveOk ? 'OK' : 'Exceeds'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">DSCR ≥ Minimum in all years?</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${dscrOk ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                    {dscrOk ? 'OK' : 'Fail'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <h3 className="font-medium text-gray-900">Interpretation</h3>
+              <p className="text-sm text-gray-600">
+                Binding debt capacity after applying both rules. Coverage in Year 1 must be ≥ Minimum DSCR.
+                Budget headroom after obligations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card">
           <div className="card-header">
             <div className="card-title">Inputs</div>
           </div>
-          <div className="card-content grid gap-4">
-            <div className="grid-2">
-              <NumberField label="Previous Year Revenue (audited)" value={inputs.prevRevenue} onChange={(v)=>setInputs({...inputs, prevRevenue: v})} hint="IDR" />
-              <NumberField label="Previous Year Operating Expenses" value={inputs.prevOpex} onChange={(v)=>setInputs({...inputs, prevOpex: v})} hint="IDR" />
-              <PercentField label="Projected Revenue Growth" value={inputs.revGrowth*100} onChange={(v)=>setInputs({...inputs, revGrowth: v/100})} />
-              <PercentField label="Projected O&M Growth" value={inputs.opexGrowth*100} onChange={(v)=>setInputs({...inputs, opexGrowth: v/100})} />
-              <PercentField label="Interest Rate" value={inputs.rate*100} onChange={(v)=>setInputs({...inputs, rate: v/100})} />
-              <NumberField label="Loan Term (years — includes grace)" value={inputs.termYears} onChange={(v)=>setInputs({...inputs, termYears: Math.max(1, Math.floor(v))})} step={1} />
-              <NumberField label="Grace Period (years)" value={inputs.graceYears} onChange={(v)=>setInputs({...inputs, graceYears: Math.max(0, Math.floor(v))})} step={1} hint="Interest-only years" />
+          <div className="card-content space-y-6">
+            {/* Revenue Section */}
+            <div className="space-y-3">
+              <h3 className="font-medium text-gray-900">Previous Year Revenue (audited)</h3>
+              <div className="grid gap-3 pl-4 border-l-2 border-blue-200">
+                <NumberField 
+                  label="Local Revenue (PAD)" 
+                  value={inputs.localRevenuePAD} 
+                  onChange={(v)=>setInputs({...inputs, localRevenuePAD: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Balancing Fund (Dana Perimbangan)" 
+                  value={inputs.balancingFundPerimbangan} 
+                  onChange={(v)=>setInputs({...inputs, balancingFundPerimbangan: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Lain-lain Pendapatan yang Sah" 
+                  value={inputs.otherLegalRevenue} 
+                  onChange={(v)=>setInputs({...inputs, otherLegalRevenue: v})} 
+                  hint="IDR" 
+                />
+                <div className="text-sm font-medium text-gray-700 pt-2 border-t">
+                  Total Revenue: {fmtIDR(getTotalRevenue(inputs))}
+                </div>
+              </div>
+            </div>
+
+            {/* Nett Financing Section */}
+            <div className="space-y-3">
+              <h3 className="font-medium text-gray-900">Nett Financing</h3>
+              <div className="grid gap-3 pl-4 border-l-2 border-green-200">
+                <NumberField 
+                  label="Financing Receipt" 
+                  value={inputs.financingReceipts} 
+                  onChange={(v)=>setInputs({...inputs, financingReceipts: v})} 
+                  hint="SILPA, Financing Receipts" 
+                />
+                <NumberField 
+                  label="Financing Expenditure" 
+                  value={inputs.financingExpenditures} 
+                  onChange={(v)=>setInputs({...inputs, financingExpenditures: v})} 
+                  hint="IDR" 
+                />
+                <div className="text-sm font-medium text-gray-700 pt-2 border-t">
+                  Nett Financing: {fmtIDR(getNettFinancing(inputs))}
+                </div>
+              </div>
+            </div>
+
+            {/* Operating Expenses Section */}
+            <div className="space-y-3">
+              <h3 className="font-medium text-gray-900">Previous Year Operating Expenses</h3>
+              <div className="grid gap-3 pl-4 border-l-2 border-orange-200">
+                <NumberField 
+                  label="Personnel Expenses" 
+                  value={inputs.personnelExpenses} 
+                  onChange={(v)=>setInputs({...inputs, personnelExpenses: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Goods & Services Expenses" 
+                  value={inputs.goodsServicesExpenses} 
+                  onChange={(v)=>setInputs({...inputs, goodsServicesExpenses: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Capital Expenditures" 
+                  value={inputs.capitalExpenditures} 
+                  onChange={(v)=>setInputs({...inputs, capitalExpenditures: v})} 
+                  hint="IDR" 
+                />
+                <div className="text-sm font-medium text-gray-700 pt-2 border-t">
+                  Total OpEx: {fmtIDR(getTotalOpex(inputs))}
+                </div>
+              </div>
+            </div>
+
+            {/* Growth and Loan Parameters */}
+            <div className="grid grid-cols-2 gap-4">
+              <PercentField label="Projected Revenue Growth (annual, %)" value={inputs.revGrowth*100} onChange={(v)=>setInputs({...inputs, revGrowth: v/100})} />
+              <PercentField label="Projected O&M Growth (annual, %)" value={inputs.opexGrowth*100} onChange={(v)=>setInputs({...inputs, opexGrowth: v/100})} />
+              <PercentField label="Interest Rate (annual, %) (Assumption)" value={inputs.rate*100} onChange={(v)=>setInputs({...inputs, rate: v/100})} />
+              <NumberField label="Loan Term (years)" value={inputs.termYears} onChange={(v)=>setInputs({...inputs, termYears: Math.max(1, Math.floor(v))})} step={1} />
               <div className="grid gap-2">
                 <label className="label">Payment Type</label>
                 <select value={inputs.paymentType} onChange={(e)=>setInputs({...inputs, paymentType: e.target.value as any})} className="input">
@@ -94,32 +247,80 @@ export default function Page() {
                   <option value="equal_principal">Equal Principal</option>
                 </select>
               </div>
-              <PercentField label="Reserve Ratio (of next year's DS)" value={inputs.reserveRatio*100} onChange={(v)=>setInputs({...inputs, reserveRatio: v/100})} />
-              <PercentField label="Minimum DSCR" value={inputs.minDSCR*100} onChange={(v)=>setInputs({...inputs, minDSCR: v/100})} hint="e.g. 250% = 2.5x" />
+              <PercentField label="Reserve Ratio (as % of annual debt service)" value={inputs.reserveRatio*100} onChange={(v)=>setInputs({...inputs, reserveRatio: v/100})} />
+              <PercentField label="Minimum DSCR (must be ≥ this)" value={inputs.minDSCR*100} onChange={(v)=>setInputs({...inputs, minDSCR: v/100})} hint="Regulatory minimum coverage" />
               <NumberField label="Initial Reserve Balance" value={inputs.initReserve} onChange={(v)=>setInputs({...inputs, initReserve: v})} hint="IDR" />
             </div>
-            {inputs.termYears <= inputs.graceYears && (
-              <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                Grace period must be less than the loan term. Increase term or reduce grace to enable amortization.
-              </div>
-            )}
           </div>
         </div>
 
         <div className="card">
           <div className="card-header">
-            <div className="card-title">Key Results</div>
-          </div>
-          <div className="card-content grid gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <KPI label="Allowed Debt" value={fmtIDR(base.cap.allowedDebt)} badge={base.cap.binding} />
-              <KPI label="Max by 75% Revenue Rule" value={fmtIDR(base.cap.maxDebtRevenueRule)} />
-              <KPI label="Max Annual DS (DSCR)" value={fmtIDR(base.cap.maxAnnualDS)} />
-              <KPI label="Minimum DSCR across term" value={base.minD > 0 ? `${base.minD.toFixed(2)}x` : '—'} intent={dscrOk ? 'ok':'warn'} />
+            <div className="card-title">Debt Capacity Rules & Binding Constraint</div>
+            <div className="text-sm text-gray-600 mt-1">
+              Assumptions read from Inputs sheet; do not overwrite formulas.
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={"badge " + (seventyFiveOk ? '' : 'border-red-300 text-red-700')}>{seventyFiveOk ? 'Within 75% revenue cap':'Exceeds 75% revenue cap'}</span>
-              <span className={"badge " + (dscrOk ? '' : 'border-red-300 text-red-700')}>{dscrOk ? 'DSCR ≥ minimum in all years':'DSCR below minimum in some years'}</span>
+          </div>
+          <div className="card-content space-y-6">
+            <div className="space-y-4">
+              <div className="grid gap-3">
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-sm font-medium text-gray-900">Net Operating Income (NOI) = PrevRevenue - PrevOpEx</span>
+                  <div className="text-right">
+                    <div className="font-mono text-sm">{fmtIDR(base.cap.NOI)}</div>
+                    <div className="text-xs text-gray-500">Available to service debt (Year 0 proxy).</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-sm font-medium text-gray-900">Max Debt from 75% Revenue Rule</span>
+                  <div className="text-right">
+                    <div className="font-mono text-sm">{fmtIDR(base.cap.maxDebtRevenueRule)}</div>
+                    <div className="text-xs text-gray-500">Law: Max outstanding/new debt ≤ 75% of previous revenue.</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-sm font-medium text-gray-900">Max Annual Debt Service from DSCR</span>
+                  <div className="text-right">
+                    <div className="font-mono text-sm">{fmtIDR(base.cap.maxAnnualDS)}</div>
+                    <div className="text-xs text-gray-500">NOI / MinDSCR (≥ {inputs.minDSCR}).</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-sm font-medium text-gray-900">Debt PV allowed by DSCR (Annuity)</span>
+                  <div className="text-right">
+                    <div className="font-mono text-sm">{fmtIDR(base.cap.dscrPV)}</div>
+                    <div className="text-xs text-gray-500">Present value given max annual DS and interest rate.</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-3 border-2 border-blue-200 rounded-lg bg-blue-50">
+                  <span className="text-sm font-semibold text-blue-900">Final Allowed Debt (lower of 75% rule & DSCR-PV)</span>
+                  <div className="text-right">
+                    <div className="font-mono text-lg font-semibold text-blue-900">{fmtIDR(base.cap.allowedDebt)}</div>
+                    <div className="text-xs text-blue-700">Binding capacity used to size the loan/bond.</div>
+                    <div className="text-xs text-blue-600 font-medium mt-1">Binding constraint: {base.cap.binding}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <KPI 
+                label="Minimum DSCR across term" 
+                value={base.minD > 0 ? `${base.minD.toFixed(2)}x` : '—'} 
+                intent={dscrOk ? 'ok':'warn'} 
+              />
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-xs px-3 py-1 rounded-full ${seventyFiveOk ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'}`}>
+                    {seventyFiveOk ? '✓ Within 75% revenue cap':'⚠ Exceeds 75% revenue cap'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-xs px-3 py-1 rounded-full ${dscrOk ? 'bg-green-100 text-green-800 border border-green-200' : 'bg-red-100 text-red-800 border border-red-200'}`}>
+                    {dscrOk ? '✓ DSCR ≥ minimum in all years':'⚠ DSCR below minimum in some years'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -223,9 +424,24 @@ export default function Page() {
         </div>
       </div>
 
-      <div className="text-xs text-gray-500">
-        Notes: Max debt = min( 75%×prior revenue, DSCR-based PV with grace ). Grace years are interest-only. Reserves fund next year’s debt service by the chosen ratio.
-        This tool is simplified and does not model taxes, capitalized interest, issuance costs, or multiple tranches. Always corroborate with legal and MOF guidance.
+      <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+        <div className="text-sm font-medium text-gray-900">Important Notes & Legal Guidance</div>
+        <div className="text-xs text-gray-600 space-y-2">
+          <p>
+            <strong>Calculation Method:</strong> Max debt = min( 75%×prior revenue, DSCR-based PV with grace ). Grace years are interest-only. 
+            Reserves fund next year&apos;s debt service by the chosen ratio.
+          </p>
+          <p>
+            <strong>Limitations:</strong> This tool is simplified and does not model taxes, capitalized interest, issuance costs, or multiple tranches.
+          </p>
+          <p className="font-medium text-amber-700">
+            ⚠️ <strong>Always corroborate with legal and MOF guidance.</strong> This calculator is for preliminary analysis only.
+            Consult Ministry of Finance regulations and local legal requirements before finalizing debt arrangements.
+          </p>
+          <div className="mt-3 pt-2 border-t border-gray-200 text-gray-500">
+            Municipal Debt Capacity & Repayment Planner (Indonesia) • Created by: Endi Roswendi • {new Date().getFullYear()}
+          </div>
+        </div>
       </div>
     </div>
   );

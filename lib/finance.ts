@@ -17,10 +17,25 @@ export const fmtIDR = (v: number) =>
     .format(isFinite(v) ? Math.round(v) : 0);
 
 export type Inputs = {
-  prevRevenue: number;
-  prevOpex: number;
+  // Revenue breakdown (matching Excel structure)
+  localRevenuePAD: number;
+  balancingFundPerimbangan: number;
+  otherLegalRevenue: number;
+  
+  // Nett Financing (matching Excel SILPA + Financing)
+  financingReceipts: number;
+  financingExpenditures: number;
+  
+  // Operating expenses breakdown
+  personnelExpenses: number;
+  goodsServicesExpenses: number;
+  capitalExpenditures: number;
+  
+  // Growth projections
   revGrowth: number;
   opexGrowth: number;
+  
+  // Loan parameters
   rate: number;
   termYears: number;
   paymentType: "annuity" | "equal_principal";
@@ -47,19 +62,57 @@ export type Row = {
   surplus: number;
 };
 
+// Helper functions to match Excel structure
+export function getTotalRevenue(i: Inputs): number {
+  return i.localRevenuePAD + i.balancingFundPerimbangan + i.otherLegalRevenue;
+}
+
+export function getNettFinancing(i: Inputs): number {
+  return i.financingReceipts - i.financingExpenditures;
+}
+
+export function getTotalOpex(i: Inputs): number {
+  return i.personnelExpenses + i.goodsServicesExpenses + i.capitalExpenditures;
+}
+
 export function computeCapacity(i: Inputs) {
-  const NOI = Math.max(i.prevRevenue - i.prevOpex, 0);
-  const maxDebtRevenueRule = 0.75 * i.prevRevenue;
+  // Match Excel formulas exactly
+  const totalRevenue = getTotalRevenue(i);
+  const nettFinancing = getNettFinancing(i);
+  const totalOpex = getTotalOpex(i);
+  
+  // Net Operating Income = Total Revenue + Nett Financing - Total OpEx (matching Excel)
+  const NOI = Math.max(totalRevenue + nettFinancing - totalOpex, 0);
+  
+  // 75% Revenue Rule (using total audited revenue)
+  const maxDebtRevenueRule = 0.75 * totalRevenue;
+  
+  // Max Annual Debt Service from DSCR
   const maxAnnualDS = NOI / i.minDSCR;
+  
+  // Present value calculation with grace period
   const amortYears = Math.max(i.termYears - i.graceYears, 0);
   const pvAnnuityAfterGrace = amortYears > 0
     ? pv(i.rate, amortYears, maxAnnualDS, 0, 0) / Math.pow(1 + i.rate, i.graceYears)
     : 0;
   const capFromInterestOnly = i.rate > 0 ? maxAnnualDS / i.rate : Number.POSITIVE_INFINITY;
   const dscrPV = Math.min(pvAnnuityAfterGrace || 0, capFromInterestOnly);
+  
+  // Final allowed debt (minimum of both constraints)
   const allowedDebt = Math.max(0, Math.min(maxDebtRevenueRule, dscrPV));
   const binding = Math.abs(allowedDebt - maxDebtRevenueRule) < 1e-6 ? "75% of prior revenue" : "DSCR constraint";
-  return { NOI, maxDebtRevenueRule, maxAnnualDS, dscrPV, allowedDebt, binding };
+  
+  return { 
+    NOI, 
+    totalRevenue,
+    nettFinancing,
+    totalOpex,
+    maxDebtRevenueRule, 
+    maxAnnualDS, 
+    dscrPV, 
+    allowedDebt, 
+    binding 
+  };
 }
 
 export function buildSchedule(i: Inputs, allowedDebt: number): Row[] {
@@ -70,8 +123,13 @@ export function buildSchedule(i: Inputs, allowedDebt: number): Row[] {
   const epPrincipal = i.paymentType === "equal_principal" && amortYears > 0 ? allowedDebt / amortYears : 0;
 
   let prevBeg = allowedDebt;
-  let revenue = i.prevRevenue * (1 + i.revGrowth);
-  let opex = i.prevOpex * (1 + i.opexGrowth);
+  // Use total revenue and nett financing for projections
+  const totalRevenue = getTotalRevenue(i);
+  const nettFinancing = getNettFinancing(i);
+  const totalOpex = getTotalOpex(i);
+  
+  let revenue = (totalRevenue + nettFinancing) * (1 + i.revGrowth);
+  let opex = totalOpex * (1 + i.opexGrowth);
   let reserveBeg = i.initReserve;
 
   for (let y = 1; y <= n; y++) {
