@@ -48,6 +48,11 @@ export default function Page() {
     rate: 0.08,
     termYears: 10,
     paymentType: 'equal_principal', // Excel shows "Equal Principal"
+    
+    // Debt structure (per dad's feedback)
+    debtType: 'ptsmi_other', // Default to PT SMI/Other
+    finalDebtTaken: 3_391_014_787_866, // Default to match Excel allowed debt
+    
     reserveRatio: 1.0,
     minDSCR: 2.5,
     initReserve: 0,
@@ -105,8 +110,12 @@ export default function Page() {
               <h3 className="font-medium text-gray-900">Key Capacity Outputs</h3>
               <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Allowed Debt (IDR)</span>
+                  <span className="text-sm text-gray-600">Allowed Debt Ceiling (IDR)</span>
                   <span className="font-mono text-sm">{fmtIDR(base.cap.allowedDebt)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Final Debt Taken (IDR)</span>
+                  <span className="font-mono text-sm">{fmtIDR(Math.min(inputs.finalDebtTaken, base.cap.allowedDebt))}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">First-Year Debt Service</span>
@@ -234,22 +243,63 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Growth and Loan Parameters */}
+            {/* Growth Parameters */}
             <div className="grid grid-cols-2 gap-4">
               <PercentField label="Projected Revenue Growth (annual, %)" value={inputs.revGrowth*100} onChange={(v)=>setInputs({...inputs, revGrowth: v/100})} />
               <PercentField label="Projected O&M Growth (annual, %)" value={inputs.opexGrowth*100} onChange={(v)=>setInputs({...inputs, opexGrowth: v/100})} />
-              <PercentField label="Interest Rate (annual, %) (Assumption)" value={inputs.rate*100} onChange={(v)=>setInputs({...inputs, rate: v/100})} />
-              <NumberField label="Loan Term (years)" value={inputs.termYears} onChange={(v)=>setInputs({...inputs, termYears: Math.max(1, Math.floor(v))})} step={1} />
-              <div className="grid gap-2">
-                <label className="label">Payment Type</label>
-                <select value={inputs.paymentType} onChange={(e)=>setInputs({...inputs, paymentType: e.target.value as any})} className="input">
-                  <option value="annuity">Annuity</option>
-                  <option value="equal_principal">Equal Principal</option>
-                </select>
+            </div>
+
+            {/* Debt Structure & Parameters */}
+            <div className="space-y-3">
+              <h3 className="font-medium text-gray-900">Debt Structure & Parameters</h3>
+              <div className="grid gap-4 pl-4 border-l-2 border-purple-200">
+                <div className="grid grid-cols-2 gap-4">
+                  <PercentField label="Interest Rate (annual, %) (Assumption)" value={inputs.rate*100} onChange={(v)=>setInputs({...inputs, rate: v/100})} />
+                  <NumberField label="Loan Term (years)" value={inputs.termYears} onChange={(v)=>setInputs({...inputs, termYears: Math.max(1, Math.floor(v))})} step={1} />
+                </div>
+                
+                <div className="grid gap-2">
+                  <label className="label">Debt Type</label>
+                  <select value={inputs.debtType} onChange={(e)=>setInputs({...inputs, debtType: e.target.value as any})} className="input">
+                    <option value="bond">BOND (equal interest annually)</option>
+                    <option value="ptsmi_other">PT SMI / Other (interest on outstanding balance)</option>
+                  </select>
+                  <div className="text-xs text-gray-500">
+                    {inputs.debtType === 'bond' 
+                      ? 'BOND: Equal interest payment annually on original debt amount' 
+                      : 'PT SMI/Other: Interest calculated on outstanding debt balance'}
+                  </div>
+                </div>
+
+                {inputs.debtType === 'ptsmi_other' && (
+                  <div className="grid gap-2">
+                    <label className="label">Payment Type</label>
+                    <select value={inputs.paymentType} onChange={(e)=>setInputs({...inputs, paymentType: e.target.value as any})} className="input">
+                      <option value="annuity">Annuity</option>
+                      <option value="equal_principal">Equal Principal</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid gap-4">
+                  <NumberField 
+                    label="FINAL DEBT TAKEN (≤ Allowed Debt)" 
+                    value={inputs.finalDebtTaken} 
+                    onChange={(v)=>setInputs({...inputs, finalDebtTaken: Math.min(v, base.cap.allowedDebt)})} 
+                    hint="IDR"
+                  />
+                  <div className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
+                    <strong>Important:</strong> Allowed debt ({fmtIDR(base.cap.allowedDebt)}) is the ceiling. 
+                    Government takes debt ≤ this amount. Payment schedule uses FINAL DEBT TAKEN.
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <PercentField label="Reserve Ratio (as % of annual debt service)" value={inputs.reserveRatio*100} onChange={(v)=>setInputs({...inputs, reserveRatio: v/100})} />
+                  <PercentField label="Minimum DSCR (must be ≥ this)" value={inputs.minDSCR*100} onChange={(v)=>setInputs({...inputs, minDSCR: v/100})} hint="Regulatory minimum coverage" />
+                </div>
+                <NumberField label="Initial Reserve Balance" value={inputs.initReserve} onChange={(v)=>setInputs({...inputs, initReserve: v})} hint="IDR" />
               </div>
-              <PercentField label="Reserve Ratio (as % of annual debt service)" value={inputs.reserveRatio*100} onChange={(v)=>setInputs({...inputs, reserveRatio: v/100})} />
-              <PercentField label="Minimum DSCR (must be ≥ this)" value={inputs.minDSCR*100} onChange={(v)=>setInputs({...inputs, minDSCR: v/100})} hint="Regulatory minimum coverage" />
-              <NumberField label="Initial Reserve Balance" value={inputs.initReserve} onChange={(v)=>setInputs({...inputs, initReserve: v})} hint="IDR" />
             </div>
           </div>
         </div>
@@ -293,11 +343,19 @@ export default function Page() {
                   </div>
                 </div>
                 <div className="flex justify-between items-center py-3 border-2 border-blue-200 rounded-lg bg-blue-50">
-                  <span className="text-sm font-semibold text-blue-900">Final Allowed Debt (lower of 75% rule & DSCR-PV)</span>
+                  <span className="text-sm font-semibold text-blue-900">Allowed Debt CEILING (lower of 75% rule & DSCR-PV)</span>
                   <div className="text-right">
                     <div className="font-mono text-lg font-semibold text-blue-900">{fmtIDR(base.cap.allowedDebt)}</div>
-                    <div className="text-xs text-blue-700">Binding capacity used to size the loan/bond.</div>
+                    <div className="text-xs text-blue-700">Maximum debt capacity - government can take ≤ this amount.</div>
                     <div className="text-xs text-blue-600 font-medium mt-1">Binding constraint: {base.cap.binding}</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center py-3 border-2 border-green-200 rounded-lg bg-green-50">
+                  <span className="text-sm font-semibold text-green-900">FINAL DEBT TAKEN (actual debt amount)</span>
+                  <div className="text-right">
+                    <div className="font-mono text-lg font-semibold text-green-900">{fmtIDR(Math.min(inputs.finalDebtTaken, base.cap.allowedDebt))}</div>
+                    <div className="text-xs text-green-700">Payment schedule calculated from this amount.</div>
+                    <div className="text-xs text-green-600 font-medium mt-1">Debt Type: {inputs.debtType === 'bond' ? 'BOND' : 'PT SMI/Other'}</div>
                   </div>
                 </div>
               </div>

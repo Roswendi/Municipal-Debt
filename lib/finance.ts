@@ -39,6 +39,11 @@ export type Inputs = {
   rate: number;
   termYears: number;
   paymentType: "annuity" | "equal_principal";
+  
+  // Debt structure (added per dad's feedback)
+  debtType: "bond" | "ptsmi_other"; // BOND vs PT SMI/Other
+  finalDebtTaken: number; // Actual debt amount ≤ allowed debt ceiling
+  
   reserveRatio: number;
   minDSCR: number;
   initReserve: number;
@@ -119,10 +124,14 @@ export function buildSchedule(i: Inputs, allowedDebt: number): Row[] {
   const rows: Row[] = [];
   const n = Math.max(0, Math.floor(i.termYears));
   const amortYears = Math.max(0, Math.floor(i.termYears - i.graceYears));
-  const annuityPmt = i.paymentType === "annuity" && amortYears > 0 ? pmt(i.rate, amortYears, allowedDebt) : 0;
-  const epPrincipal = i.paymentType === "equal_principal" && amortYears > 0 ? allowedDebt / amortYears : 0;
+  
+  // Use FINAL DEBT TAKEN instead of allowed debt (per dad's feedback)
+  const actualDebt = Math.min(i.finalDebtTaken, allowedDebt);
+  
+  const annuityPmt = i.paymentType === "annuity" && amortYears > 0 ? pmt(i.rate, amortYears, actualDebt) : 0;
+  const epPrincipal = i.paymentType === "equal_principal" && amortYears > 0 ? actualDebt / amortYears : 0;
 
-  let prevBeg = allowedDebt;
+  let prevBeg = actualDebt;
   // Use total revenue and nett financing for projections
   const totalRevenue = getTotalRevenue(i);
   const nettFinancing = getNettFinancing(i);
@@ -134,23 +143,54 @@ export function buildSchedule(i: Inputs, allowedDebt: number): Row[] {
 
   for (let y = 1; y <= n; y++) {
     const inGrace = y <= i.graceYears;
-    const interest = y <= i.termYears ? prevBeg * i.rate : 0;
+    
+    // Calculate interest based on debt type (per dad's feedback)
+    let interest = 0;
+    if (y <= i.termYears) {
+      if (i.debtType === "bond") {
+        // BOND: Equal interest payment annually (on original debt amount)
+        interest = actualDebt * i.rate;
+      } else {
+        // PT SMI/Other: Interest calculated on outstanding balance
+        interest = prevBeg * i.rate;
+      }
+    }
+    
     let principal = 0;
     if (!inGrace && y <= i.termYears) {
-      principal = i.paymentType === "annuity" ? Math.max(0, Math.min(prevBeg, annuityPmt - interest))
-                                              : Math.max(0, Math.min(prevBeg, epPrincipal));
+      if (i.debtType === "bond") {
+        // BOND: Equal principal payments
+        principal = Math.max(0, Math.min(prevBeg, actualDebt / i.termYears));
+      } else {
+        // PT SMI/Other: Use selected payment type
+        principal = i.paymentType === "annuity" ? Math.max(0, Math.min(prevBeg, annuityPmt - interest))
+                                                : Math.max(0, Math.min(prevBeg, epPrincipal));
+      }
     }
     const debtService = inGrace ? interest : (interest + principal);
 
-    // Next year's DS
+    // Next year's DS (updated for debt types)
     let nextYearDS = 0;
     if (y < n) {
       const nextBeg = Math.max(prevBeg - principal, 0);
-      const nextInterest = nextBeg * i.rate;
+      
+      // Calculate next year interest based on debt type
+      let nextInterest = 0;
+      if (i.debtType === "bond") {
+        nextInterest = actualDebt * i.rate;
+      } else {
+        nextInterest = nextBeg * i.rate;
+      }
+      
       let nextPrincipal = 0;
       if (y + 1 <= i.graceYears) nextPrincipal = 0;
-      else if (i.paymentType === "annuity" && amortYears > 0) nextPrincipal = Math.max(0, Math.min(nextBeg, annuityPmt - nextInterest));
-      else if (amortYears > 0) nextPrincipal = Math.max(0, Math.min(nextBeg, epPrincipal));
+      else if (i.debtType === "bond") {
+        nextPrincipal = Math.max(0, Math.min(nextBeg, actualDebt / i.termYears));
+      } else if (i.paymentType === "annuity" && amortYears > 0) {
+        nextPrincipal = Math.max(0, Math.min(nextBeg, annuityPmt - nextInterest));
+      } else if (amortYears > 0) {
+        nextPrincipal = Math.max(0, Math.min(nextBeg, epPrincipal));
+      }
       nextYearDS = (y + 1) <= i.graceYears ? nextInterest : (nextInterest + nextPrincipal);
     }
 
