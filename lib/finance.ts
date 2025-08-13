@@ -42,7 +42,8 @@ export type Inputs = {
   
   // Debt structure (added per dad's feedback)
   debtType: "bond" | "ptsmi_other"; // BOND vs PT SMI/Other
-  finalDebtTaken: number; // Actual debt amount ≤ allowed debt ceiling
+  allowedDebt: number; // User-selected allowed debt (interchangeable)
+  finalDebtTaken: number; // Actual debt amount ≤ allowed debt
   
   reserveRatio: number;
   minDSCR: number;
@@ -115,18 +116,18 @@ export function computeCapacity(i: Inputs) {
     maxDebtRevenueRule, 
     maxAnnualDS, 
     dscrPV, 
-    allowedDebt, 
+    calculatedMaxDebt: allowedDebt, // Rename to avoid confusion with user input
     binding 
   };
 }
 
-export function buildSchedule(i: Inputs, allowedDebt: number): Row[] {
+export function buildSchedule(i: Inputs): Row[] {
   const rows: Row[] = [];
   const n = Math.max(0, Math.floor(i.termYears));
   const amortYears = Math.max(0, Math.floor(i.termYears - i.graceYears));
   
-  // Use FINAL DEBT TAKEN instead of allowed debt (per dad's feedback)
-  const actualDebt = Math.min(i.finalDebtTaken, allowedDebt);
+  // Use FINAL DEBT TAKEN, respecting user's allowed debt (per dad's feedback)
+  const actualDebt = Math.min(i.finalDebtTaken, i.allowedDebt);
   
   const annuityPmt = i.paymentType === "annuity" && amortYears > 0 ? pmt(i.rate, amortYears, actualDebt) : 0;
   const epPrincipal = i.paymentType === "equal_principal" && amortYears > 0 ? actualDebt / amortYears : 0;

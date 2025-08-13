@@ -49,9 +49,10 @@ export default function Page() {
     termYears: 10,
     paymentType: 'equal_principal', // Excel shows "Equal Principal"
     
-    // Debt structure (per dad's feedback)
+    // Debt structure (per dad's feedback)  
     debtType: 'ptsmi_other', // Default to PT SMI/Other
-    finalDebtTaken: 3_391_014_787_866, // Default to match Excel allowed debt
+    allowedDebt: 3_391_014_787_866, // User-selected allowed debt (interchangeable)
+    finalDebtTaken: 3_391_014_787_866, // Default to match allowed debt
     
     reserveRatio: 1.0,
     minDSCR: 2.5,
@@ -65,7 +66,7 @@ export default function Page() {
 
   const base = useMemo(() => {
     const cap = computeCapacity(inputs);
-    const sched = buildSchedule(inputs, cap.allowedDebt);
+    const sched = buildSchedule(inputs);
     const minD = minDSCR(sched);
     return { cap, sched, minD };
   }, [inputs]);
@@ -78,13 +79,13 @@ export default function Page() {
       personnelExpenses: inputs.personnelExpenses * (1 + opexShockPct / 100),
     };
     const cap = computeCapacity(i);
-    const sched = buildSchedule(i, cap.allowedDebt);
+    const sched = buildSchedule(i);
     const minD = minDSCR(sched);
     return { cap, sched, minD };
   }, [inputs, rateShockBps, revShockPct, opexShockPct]);
 
   const dscrOk = base.minD >= inputs.minDSCR && base.minD > 0;
-  const seventyFiveOk = base.cap.allowedDebt <= 0.75 * getTotalRevenue(inputs) + 1e-6;
+  const seventyFiveOk = inputs.allowedDebt <= 0.75 * getTotalRevenue(inputs) + 1e-6;
 
   return (
     <div className="container space-y-6 py-6">
@@ -110,12 +111,12 @@ export default function Page() {
               <h3 className="font-medium text-gray-900">Key Capacity Outputs</h3>
               <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Allowed Debt Ceiling (IDR)</span>
-                  <span className="font-mono text-sm">{fmtIDR(base.cap.allowedDebt)}</span>
+                  <span className="text-sm text-gray-600">Allowed Debt (IDR)</span>
+                  <span className="font-mono text-sm">{fmtIDR(inputs.allowedDebt)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">Final Debt Taken (IDR)</span>
-                  <span className="font-mono text-sm">{fmtIDR(Math.min(inputs.finalDebtTaken, base.cap.allowedDebt))}</span>
+                  <span className="font-mono text-sm">{fmtIDR(Math.min(inputs.finalDebtTaken, inputs.allowedDebt))}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-600">First-Year Debt Service</span>
@@ -285,11 +286,11 @@ export default function Page() {
                   <NumberField 
                     label="FINAL DEBT TAKEN (≤ Allowed Debt)" 
                     value={inputs.finalDebtTaken} 
-                    onChange={(v)=>setInputs({...inputs, finalDebtTaken: Math.min(v, base.cap.allowedDebt)})} 
+                    onChange={(v)=>setInputs({...inputs, finalDebtTaken: Math.min(v, inputs.allowedDebt)})} 
                     hint="IDR"
                   />
                   <div className="text-xs text-gray-600 bg-blue-50 p-2 rounded">
-                    <strong>Important:</strong> Allowed debt ({fmtIDR(base.cap.allowedDebt)}) is the ceiling. 
+                    <strong>Important:</strong> Allowed debt ({fmtIDR(inputs.allowedDebt)}) is the ceiling. 
                     Government takes debt ≤ this amount. Payment schedule uses FINAL DEBT TAKEN.
                   </div>
                 </div>
@@ -342,18 +343,34 @@ export default function Page() {
                     <div className="text-xs text-gray-500">Present value given max annual DS and interest rate.</div>
                   </div>
                 </div>
-                <div className="flex justify-between items-center py-3 border-2 border-blue-200 rounded-lg bg-blue-50">
-                  <span className="text-sm font-semibold text-blue-900">Allowed Debt CEILING (lower of 75% rule & DSCR-PV)</span>
+                <div className="flex justify-between items-center py-3 border-2 border-gray-200 rounded-lg bg-gray-50">
+                  <span className="text-sm font-semibold text-gray-900">Calculated Maximum Debt (lower of 75% rule & DSCR-PV)</span>
                   <div className="text-right">
-                    <div className="font-mono text-lg font-semibold text-blue-900">{fmtIDR(base.cap.allowedDebt)}</div>
-                    <div className="text-xs text-blue-700">Maximum debt capacity - government can take ≤ this amount.</div>
-                    <div className="text-xs text-blue-600 font-medium mt-1">Binding constraint: {base.cap.binding}</div>
+                    <div className="font-mono text-lg font-semibold text-gray-900">{fmtIDR(base.cap.calculatedMaxDebt)}</div>
+                    <div className="text-xs text-gray-700">Regulatory maximum based on financial rules.</div>
+                    <div className="text-xs text-gray-600 font-medium mt-1">Binding constraint: {base.cap.binding}</div>
                   </div>
                 </div>
+                
+                <div className="grid gap-4">
+                  <NumberField 
+                    label="ALLOWED DEBT (Interchangeable)" 
+                    value={inputs.allowedDebt} 
+                    onChange={(v)=>setInputs({...inputs, allowedDebt: v})} 
+                    hint="IDR - User can adjust this amount"
+                  />
+                  {inputs.allowedDebt > base.cap.calculatedMaxDebt && (
+                    <div className="text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+                      ⚠️ Warning: Selected allowed debt ({fmtIDR(inputs.allowedDebt)}) exceeds calculated maximum ({fmtIDR(base.cap.calculatedMaxDebt)}). 
+                      This may violate regulatory constraints.
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex justify-between items-center py-3 border-2 border-green-200 rounded-lg bg-green-50">
                   <span className="text-sm font-semibold text-green-900">FINAL DEBT TAKEN (actual debt amount)</span>
                   <div className="text-right">
-                    <div className="font-mono text-lg font-semibold text-green-900">{fmtIDR(Math.min(inputs.finalDebtTaken, base.cap.allowedDebt))}</div>
+                    <div className="font-mono text-lg font-semibold text-green-900">{fmtIDR(Math.min(inputs.finalDebtTaken, inputs.allowedDebt))}</div>
                     <div className="text-xs text-green-700">Payment schedule calculated from this amount.</div>
                     <div className="text-xs text-green-600 font-medium mt-1">Debt Type: {inputs.debtType === 'bond' ? 'BOND' : 'PT SMI/Other'}</div>
                   </div>
@@ -465,7 +482,7 @@ export default function Page() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <KPI label="Stressed Allowed Debt" value={fmtIDR(stressed.cap.allowedDebt)} />
+              <KPI label="Stressed Max Debt" value={fmtIDR(stressed.cap.calculatedMaxDebt)} />
               <KPI label="Stressed Min DSCR" value={stressed.minD > 0 ? `${stressed.minD.toFixed(2)}x` : '—'} intent={stressed.minD >= inputs.minDSCR ? 'ok' : 'warn'} />
               <KPI label="Rate (stressed)" value={`${((inputs.rate + rateShockBps/10000)*100).toFixed(2)}%`} />
             </div>
