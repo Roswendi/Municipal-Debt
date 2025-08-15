@@ -20,16 +20,21 @@ export type Inputs = {
   // Revenue breakdown (matching Excel structure)
   localRevenuePAD: number;
   balancingFundPerimbangan: number;
+  otherTransferCentral: number; // New field from Excel
+  transferSharingTax: number; // New field from Excel
+  otherFinancialAid: number; // New field from Excel
   otherLegalRevenue: number;
   
   // Nett Financing (matching Excel SILPA + Financing)
   financingReceipts: number;
   financingExpenditures: number;
   
-  // Operating expenses breakdown
-  personnelExpenses: number;
-  goodsServicesExpenses: number;
-  capitalExpenditures: number;
+  // Operating expenses (simplified to match Excel)
+  operatingExpenses: number; // Single line to match Excel
+  // Keep breakdown fields for compatibility but optional
+  personnelExpenses?: number;
+  goodsServicesExpenses?: number;
+  capitalExpenditures?: number;
   
   // Growth projections
   revGrowth: number;
@@ -70,7 +75,12 @@ export type Row = {
 
 // Helper functions to match Excel structure
 export function getTotalRevenue(i: Inputs): number {
-  return i.localRevenuePAD + i.balancingFundPerimbangan + i.otherLegalRevenue;
+  return i.localRevenuePAD + 
+         i.balancingFundPerimbangan + 
+         i.otherTransferCentral +
+         i.transferSharingTax +
+         i.otherFinancialAid +
+         i.otherLegalRevenue;
 }
 
 export function getNettFinancing(i: Inputs): number {
@@ -78,7 +88,11 @@ export function getNettFinancing(i: Inputs): number {
 }
 
 export function getTotalOpex(i: Inputs): number {
-  return i.personnelExpenses + i.goodsServicesExpenses + i.capitalExpenditures;
+  // Use single operating expense if provided, otherwise sum the breakdown
+  if (i.operatingExpenses) {
+    return i.operatingExpenses;
+  }
+  return (i.personnelExpenses || 0) + (i.goodsServicesExpenses || 0) + (i.capitalExpenditures || 0);
 }
 
 export function computeCapacity(i: Inputs) {

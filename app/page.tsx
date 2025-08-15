@@ -26,19 +26,20 @@ function downloadCSV(filename: string, rows: Row[]) {
 export default function Page() {
   // Default values matching Excel (Endi Roswendi's calculator)
   const [inputs, setInputs] = useState<Inputs>({
-    // Revenue breakdown (matching Excel: 34.722.800.000.000 total)
-    localRevenuePAD: 34_722_800_000_000,
-    balancingFundPerimbangan: 0,
-    otherLegalRevenue: 0,
+    // Revenue breakdown (matching Excel: 6.905.989.100.000 total)
+    localRevenuePAD: 2_939_900_000_000,
+    balancingFundPerimbangan: 2_746_700_000_000,
+    otherTransferCentral: 0,
+    transferSharingTax: 993_200_000_000,
+    otherFinancialAid: 226_000_000_000,
+    otherLegalRevenue: 189_100_000,
     
-    // Nett Financing (matching Excel: 1.540.603.000.000)
-    financingReceipts: 1_540_603_000_000,
+    // Nett Financing (matching Excel: 629.400.000.000)
+    financingReceipts: 629_400_000_000,
     financingExpenditures: 0,
     
-    // Operating expenses breakdown (calculated from NOI)
-    personnelExpenses: 33_459_397_000_000, // Derived from Excel NOI calculation
-    goodsServicesExpenses: 0,
-    capitalExpenditures: 0,
+    // Operating expenses (matching Excel single line)
+    operatingExpenses: 5_775_000_000_000,
     
     // Growth projections
     revGrowth: 0.05,
@@ -47,12 +48,12 @@ export default function Page() {
     // Loan parameters
     rate: 0.08,
     termYears: 10,
-    paymentType: 'equal_principal', // Excel shows "Equal Principal"
+    paymentType: 'equal_principal', // Excel shows "EQUAL"
     
-    // Debt structure (per dad's feedback)  
-    debtType: 'ptsmi_other', // Default to PT SMI/Other
-    allowedDebt: 3_391_014_787_866, // User-selected allowed debt (interchangeable)
-    finalDebtTaken: 3_391_014_787_866, // Default to match allowed debt
+    // Debt structure (matching Excel)  
+    debtType: 'bond', // Excel shows BOND
+    allowedDebt: 3_035_611_568_926, // Excel calculated max debt
+    finalDebtTaken: 1_000_000_000_000, // Excel final debt taken
     
     reserveRatio: 1.0,
     minDSCR: 2.5,
@@ -76,7 +77,12 @@ export default function Page() {
       ...inputs,
       rate: Math.max(0, inputs.rate + rateShockBps / 10_000),
       localRevenuePAD: inputs.localRevenuePAD * (1 + revShockPct / 100),
-      personnelExpenses: inputs.personnelExpenses * (1 + opexShockPct / 100),
+      balancingFundPerimbangan: inputs.balancingFundPerimbangan * (1 + revShockPct / 100),
+      otherTransferCentral: inputs.otherTransferCentral * (1 + revShockPct / 100),
+      transferSharingTax: inputs.transferSharingTax * (1 + revShockPct / 100),
+      otherFinancialAid: inputs.otherFinancialAid * (1 + revShockPct / 100),
+      otherLegalRevenue: inputs.otherLegalRevenue * (1 + revShockPct / 100),
+      operatingExpenses: inputs.operatingExpenses * (1 + opexShockPct / 100),
     };
     const cap = computeCapacity(i);
     const sched = buildSchedule(i);
@@ -183,7 +189,25 @@ export default function Page() {
                   hint="IDR" 
                 />
                 <NumberField 
-                  label="Lain-lain Pendapatan yang Sah" 
+                  label="Other Transfer from Central Government" 
+                  value={inputs.otherTransferCentral} 
+                  onChange={(v)=>setInputs({...inputs, otherTransferCentral: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Transfer sharing Tax Revenue from Provincial Gov't" 
+                  value={inputs.transferSharingTax} 
+                  onChange={(v)=>setInputs({...inputs, transferSharingTax: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Other Financial Aid" 
+                  value={inputs.otherFinancialAid} 
+                  onChange={(v)=>setInputs({...inputs, otherFinancialAid: v})} 
+                  hint="IDR" 
+                />
+                <NumberField 
+                  label="Other Local Revenue (Lain-lain Pendapatan yang Sah)" 
                   value={inputs.otherLegalRevenue} 
                   onChange={(v)=>setInputs({...inputs, otherLegalRevenue: v})} 
                   hint="IDR" 
@@ -221,22 +245,10 @@ export default function Page() {
               <h3 className="font-medium text-gray-900">Previous Year Operating Expenses</h3>
               <div className="grid gap-3 pl-4 border-l-2 border-orange-200">
                 <NumberField 
-                  label="Personnel Expenses" 
-                  value={inputs.personnelExpenses} 
-                  onChange={(v)=>setInputs({...inputs, personnelExpenses: v})} 
-                  hint="IDR" 
-                />
-                <NumberField 
-                  label="Goods & Services Expenses" 
-                  value={inputs.goodsServicesExpenses} 
-                  onChange={(v)=>setInputs({...inputs, goodsServicesExpenses: v})} 
-                  hint="IDR" 
-                />
-                <NumberField 
-                  label="Capital Expenditures" 
-                  value={inputs.capitalExpenditures} 
-                  onChange={(v)=>setInputs({...inputs, capitalExpenditures: v})} 
-                  hint="IDR" 
+                  label="Operating Expenses" 
+                  value={inputs.operatingExpenses} 
+                  onChange={(v)=>setInputs({...inputs, operatingExpenses: v})} 
+                  hint="Operating expenditure (T-1). Used to derive NOI." 
                 />
                 <div className="text-sm font-medium text-gray-700 pt-2 border-t">
                   Total OpEx: {fmtIDR(getTotalOpex(inputs))}
